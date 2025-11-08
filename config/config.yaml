@@ -1,0 +1,55 @@
+defaults:
+  - _self_
+  - runs: ${run}
+
+# CLI overrides ----------------------------------------------------------------
+run: null
+results_dir: outputs
+mode: full
+
+# -----------------------------------------------------------------------------
+# Global WandB configuration (overwritten automatically in trial mode)
+# -----------------------------------------------------------------------------
+wandb:
+  entity: gengaru617-personal
+  project: 2025-1108-1
+  mode: online  # set to "disabled" automatically for trial
+
+# -----------------------------------------------------------------------------
+# Dataset defaults (may be overridden by run configs) --------------------------
+# -----------------------------------------------------------------------------
+dataset:
+  name: continual_task_stream_25
+  num_tasks: 5
+  max_samples_per_task: 50000
+  max_seq_length: 1024
+  streaming: true
+
+# -----------------------------------------------------------------------------
+# Training defaults -----------------------------------------------------------
+# -----------------------------------------------------------------------------
+training:
+  batch_size: 8
+  task_epochs: 1
+  max_updates_per_task: 50000
+  learning_rate: 2e-4
+  weight_decay: 0.0
+  warmup_steps: 500
+  gradient_checkpointing: true
+  mixed_precision: bf16
+
+# -----------------------------------------------------------------------------
+# Evaluation defaults ---------------------------------------------------------
+# -----------------------------------------------------------------------------
+evaluation:
+  eval_batch_size: 4
+  cpu_latency_device: raspberry-pi-4
+
+# Optuna fallback (disabled by default) ---------------------------------------
+optuna:
+  n_trials: 0
+  direction: maximize
+  search_space: {}
+
+# Placeholders to keep OmegaConf happy ----------------------------------------
+model: {}

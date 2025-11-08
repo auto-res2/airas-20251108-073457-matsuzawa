@@ -1,0 +1,66 @@
+run_id: comparative-1-iter1-Llama-2-7B-HF-4-bit-QLoRA-7-B-parameters
+method: comparative
+method_name: LILAC
+model:
+  backbone:
+    name: NousResearch/Llama-2-7b-hf
+    quantisation: 4-bit QLoRA
+    frozen: true
+  adapter:
+    type: LILAC
+    lora_rank: 4          # tunable by Optuna
+    dictionary_size: 64
+    ewc_lambda: 0.4       # replay-free regularisation
+    quantisation_bits: 8
+    total_parameter_budget_mb: 3.5
+
+dataset:
+  name: continual_task_stream_25
+  num_tasks: 25
+  max_samples_per_task: 50000
+  tokenizer: NousResearch/Llama-2-7b-hf
+  max_seq_length: 1024
+  streaming: true
+
+training:
+  task_epochs: 1
+  max_updates_per_task: 50000
+  batch_size: 8
+  optimizer: adamw
+  learning_rate: 1e-4     # will be tuned
+  weight_decay: 0.0
+  lr_scheduler: linear
+  warmup_steps: 500
+  gradient_checkpointing: true
+  grad_accum_steps: 1
+  mixed_precision: bf16
+
+evaluation:
+  primary_metric: retained_accuracy_auc
+  secondary_metric: cpu_latency_overhead
+  eval_batch_size: 4
+  cpu_latency_device: raspberry-pi-4
+
+hardware:
+  gpu_type: A100-80GB
+  max_gpu_mem_gb: 80
+
+optuna:
+  n_trials: 30
+  direction: maximize
+  search_space:
+    learning_rate:
+      type: loguniform
+      low: 1e-5
+      high: 3e-4
+    lora_rank:
+      type: categorical
+      choices: [4, 8]
+    ewc_lambda:
+      type: loguniform
+      low: 1e-2
+      high: 1.0
+    weight_decay:
+      type: uniform
+      low: 0.0
+      high: 0.01
