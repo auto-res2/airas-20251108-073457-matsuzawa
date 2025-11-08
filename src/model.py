@@ -196,7 +196,7 @@ def build_model(cfg):
         tokenizer.pad_token = tokenizer.eos_token
 
     model = AutoModelForCausalLM.from_pretrained(
-        backbone_id, cache_dir=".cache/", torch_dtype=torch.float16, low_cpu_mem_usage=True
+        backbone_id, cache_dir=".cache/", dtype=torch.float16, low_cpu_mem_usage=True
     )
 
     if cfg.training.gradient_checkpointing:

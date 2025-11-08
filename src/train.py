@@ -15,7 +15,7 @@ import torch.nn.functional as F
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import confusion_matrix
 from torch import nn, optim
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import get_linear_schedule_with_warmup
@@ -176,7 +176,7 @@ def train_full_stream(cfg: DictConfig, trial: Optional[optuna.trial.Trial] = Non
         lr=cfg.training.learning_rate,
         weight_decay=cfg.training.weight_decay,
     )
-    scaler = GradScaler(enabled=cfg.training.mixed_precision and torch.cuda.is_available())
+    scaler = GradScaler('cuda', enabled=cfg.training.mixed_precision and torch.cuda.is_available())
 
     # ---------------- WandB init -----------------------------------------
     if use_wandb:
@@ -221,7 +221,7 @@ def train_full_stream(cfg: DictConfig, trial: Optional[optuna.trial.Trial] = Non
                     break
                 batch = _move_to_device(batch, device)
                 optimizer.zero_grad(set_to_none=True)
-                with autocast(enabled=cfg.training.mixed_precision and torch.cuda.is_available()):
+                with autocast('cuda', enabled=cfg.training.mixed_precision and torch.cuda.is_available()):
                     outputs = model(**batch)
                     loss = outputs["loss"]
                     # EWC regulariser for LILAC baseline -------------------

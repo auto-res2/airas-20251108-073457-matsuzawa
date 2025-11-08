@@ -57,7 +57,12 @@ TASKS: List[Dict[str, Any]] = [
 # -----------------------------------------------------------------------------
 
 def build_translation(example, src: str, tgt: str):
-    return f"Translate from {src} to {tgt}: {example[src]}\nTARGET:", example[tgt]
+    # HuggingFace translation datasets typically have a 'translation' field
+    # containing a dictionary with language codes as keys
+    translation = example.get("translation", example)
+    src_text = translation.get(src, example.get(src, ""))
+    tgt_text = translation.get(tgt, example.get(tgt, ""))
+    return f"Translate from {src} to {tgt}: {src_text}\nTARGET:", tgt_text
 
 
 def build_summarisation(example, doc: str, sum: str):
