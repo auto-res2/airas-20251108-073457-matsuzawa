@@ -6,5 +6,82 @@
     "low-rank adaptation",
     "prompt tuning",
     "hyperparameter optimization"
+  ],
+  "research_study_list": [
+    {
+      "title": "Parameter-Efficient Fine-Tuning Design Spaces"
+    },
+    {
+      "title": "Spectral Adapter: Fine-Tuning in Spectral Space"
+    },
+    {
+      "title": "Res-Tuning: A Flexible and Efficient Tuning Paradigm via Unbinding Tuner from Backbone"
+    },
+    {
+      "title": "ReFT: Representation Finetuning for Language Models"
+    },
+    {
+      "title": "LST: Ladder Side-Tuning for Parameter and Memory Efficient Transfer Learning"
+    },
+    {
+      "title": "Conditionally Adaptive Multi-Task Learning: Improving Transfer Learning in NLP Using Fewer Parameters & Less Data"
+    },
+    {
+      "title": "Adapters Strike Back"
+    },
+    {
+      "title": "Towards Modular LLMs by Building and Reusing a Library of LoRAs"
+    },
+    {
+      "title": "Spectral Adapter: Fine-Tuning in Spectral Space"
+    },
+    {
+      "title": "Compacter: Efficient Low-Rank Hypercomplex Adapter Layers"
+    },
+    {
+      "title": "The Expressive Power of Low-Rank Adaptation"
+    },
+    {
+      "title": "Spectral Entry-wise Matrix Estimation for Low-Rank Reinforcement Learning"
+    },
+    {
+      "title": "Low-rank Optimal Transport: Approximation, Statistics and Debiasing"
+    },
+    {
+      "title": "Low-rank lottery tickets: finding efficient low-rank neural networks via matrix differential equations"
+    },
+    {
+      "title": "Compressible Dynamics in Deep Overparameterized Low-Rank Learning & Adaptation"
+    },
+    {
+      "title": "Black-Box Tuning for Language-Model-as-a-Service"
+    },
+    {
+      "title": "Black-Box Tuning for Language-Model-as-a-Service"
+    },
+    {
+      "title": "Zero-Shot Continuous Prompt Transfer: Generalizing Task Semantics Across Language Models"
+    },
+    {
+      "title": "Co-training Improves Prompt-based Learning for Large Language Models"
+    },
+    {
+      "title": "Co-training Improves Prompt-based Learning for Large Language Models"
+    },
+    {
+      "title": "DP-HyPO: An Adaptive Private Framework for Hyperparameter Optimization"
+    },
+    {
+      "title": "Hyperparameter Optimization through Neural Network Partitioning"
+    },
+    {
+      "title": "Learning to Mutate with Hypergradient Guided Population"
+    },
+    {
+      "title": "Implicit differentiation of Lasso-type models for hyperparameter optimization"
+    },
+    {
+      "title": "Bayesian Optimization for Iterative Learning"
+    }
   ]
 }
