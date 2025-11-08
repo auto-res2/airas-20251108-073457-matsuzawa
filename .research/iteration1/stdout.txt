@@ -1,0 +1,11 @@
+=== [UV SYNC] Start at Sat Nov  8 08:52:28 UTC 2025 ===
+=== [UV SYNC] Finished successfully at Sat Nov  8 08:52:35 UTC 2025 ===
+=== [TRIAL RUN] Start for proposed-iter1-Llama-2-7B-HF-4-bit-QLoRA-7-B-parameters at Sat Nov  8 08:52:35 UTC 2025 ===
+Launching: /mnt/home/toma/KRK-039/_work/airas-20251108-073457-matsuzawa/airas-20251108-073457-matsuzawa/.venv/bin/python3 -u -m src.train run=proposed-iter1-Llama-2-7B-HF-4-bit-QLoRA-7-B-parameters results_dir=.research/iteration1 mode=trial
+
+=== Task 1/2: opus_books_en_fr ===
+[2025-11-08 17:54:32,884][transformers.utils.generic][WARNING] - `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+
+=== Task 2/2: wmt14_en_de ===
+=== [TRIAL RUN] PASSED for proposed-iter1-Llama-2-7B-HF-4-bit-QLoRA-7-B-parameters at Sat Nov  8 08:55:11 UTC 2025 ===
+
