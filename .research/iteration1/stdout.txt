@@ -28,3 +28,12 @@ Launching: /home/toma/pt80-1-a-29/_work/airas-20251108-073457-matsuzawa/airas-20
 [WARN] Could not load ted_hrlr_pt_en: Dataset 'ted_hrlr_translate' doesn't exist on the Hub or cannot be accessed.
 
 === Task 1/3: opus_books_en_fr ===
+=== [UV SYNC] Start at Sat Nov  8 09:06:09 AM UTC 2025 ===
+=== [UV SYNC] Finished successfully at Sat Nov  8 09:06:15 AM UTC 2025 ===
+=== [FULL EXPERIMENT] Start for comparative-1-iter1-Llama-2-7B-HF-4-bit-QLoRA-7-B-parameters at Sat Nov  8 09:06:15 AM UTC 2025 ===
+Launching: /home/toma/pt80-1-a-29/_work/airas-20251108-073457-matsuzawa/airas-20251108-073457-matsuzawa/.venv/bin/python3 -u -m src.train run=comparative-1-iter1-Llama-2-7B-HF-4-bit-QLoRA-7-B-parameters results_dir=.research/iteration1 mode=full
+[WARN] Could not load iwslt2017_en_de: Dataset scripts are no longer supported, but found iwslt2017.py
+[WARN] Could not load ted_hrlr_pt_en: Dataset 'ted_hrlr_translate' doesn't exist on the Hub or cannot be accessed.
+
+=== Task 1/3: opus_books_en_fr ===
+[2025-11-08 09:09:16,532][transformers.utils.generic][WARNING] - `use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
