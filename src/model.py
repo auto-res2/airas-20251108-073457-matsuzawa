@@ -108,6 +108,8 @@ class HIMALAYAAdapter(nn.Module):
         mat = self._dict_mat()
         if mat.shape[0] == 0:
             return
+        # Ensure residuals are on the same device as mat
+        residuals = residuals.to(mat.device)
         cos = torch.mm(
             nn.functional.normalize(residuals, dim=-1),
             nn.functional.normalize(mat, dim=-1).t(),
