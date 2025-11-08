@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - runs: ${run}
+  - runs: proposed-iter1-Llama-2-7B-HF-4-bit-QLoRA-7-B-parameters
 
 # CLI overrides ----------------------------------------------------------------
 run: proposed-iter1-Llama-2-7B-HF-4-bit-QLoRA-7-B-parameters
