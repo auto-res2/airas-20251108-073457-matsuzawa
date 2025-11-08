@@ -720,6 +720,11 @@
       "expected_result": "1) After 25 tasks HIMALAYA keeps ≤1.5 pp average forgetting vs 5–8 pp (LoRA) and 2.7 pp (LILAC/COLTAS).\n2) Final mean performance 1-3 pp above LILAC on classification, +0.6 BLEU on WMT EN→DE, +1.4 ROUGE-L summarisation.\n3) Extra storage fixed at 2.3 MB, peak Pi-4 latency +7 % (others +20 % or cannot run due to memory).\n4) Atom norm remains bounded ≤1.05 for entire stream, confirming theoretical guarantee.",
       "expected_conclusion": "A two-tier, self-normalising spectral dictionary with on-the-fly KD-Tree managed growth enables layer-free adapters to survive 25 heterogeneous tasks under a strict 2.5 MB budget and edge-CPU constraints, advancing continual PEFT beyond current LILAC/COLTAS limits while providing the first bounded-norm guarantee for replay-free adaptation."
     },
-    "iterations": []
+    "iterations": [
+      {
+        "iteration_id": 1,
+        "method": "HIMALAYA – HIerarchical Memory-Allocating LAyer-free Adapter.\nCore ideas.\n1. Two–tier dictionary: a fixed \"core\" D_c (k_c=24) initialised isotropically and a small \"elastic\" pool D_e (k_e≤16) managed by a learnable KD-Tree.  Both are layer-free.\n2. Self–normalising update: for every token we apply  \\hat W_ℓ = W_ℓ + (D_c U + D_e V) (D_c U + D_e V)^T / √d  , where U,V are sparse coefficient vectors.  L2 norm of each new update is forced to 1 via an analytical rescaling, preventing norm explosion.\n3. Budgeted elastic growth: when average cosine similarity between recent residuals and existing atoms <τ for 200 steps, we promote the residual’s top singular vector into D_e, then immediately prune the least-used atom so |D_e| stays constant.\n4. Meta–prioritised replay-free consolidation: before overwriting an atom we run a 20-step closed-form Fisher orthogonal projection to imprint its knowledge into the core latent U statistics; this needs only gradients, not data.\n5. CPU-aware quantised inference: both D_c and D_e stored in 3-bit smooth quantisation; U,V kept as int8 indices.\n6. Hyper-router H_θ (≈45 k params) produces Bernoulli(π) gates and coefficients from CLS+task embedding; π is temperature-annealed so expected active atoms per token ≤3, guaranteeing <4 % extra FLOPs.\nParameter count: |D_c|+|D_e|+|θ|+ring buffer (4×32) <2.5 MB @8-bit."
+      }
+    ]
   }
 }
