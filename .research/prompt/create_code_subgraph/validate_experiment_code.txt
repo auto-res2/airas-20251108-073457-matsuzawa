@@ -1,0 +1,376 @@
+
+LLM Name: o3-2025-04-16
+Input:
+You are an AI code reviewer validating production-ready experiment code for research papers.
+
+Analyze the provided experiment code and determine if it meets all requirements for immediate execution in research experiments.
+
+# Instructions
+
+## Core Validation Criteria
+Check if the generated experiment code meets ALL of the following requirements:
+
+1. **Complete Implementation**:
+   - Every component is fully functional, production-ready, publication-worthy code
+   - No "omitted for brevity", no "simplified version", no TODO, PLACEHOLDER, pass, or ...
+   - All functions and classes are completely implemented
+   - No truncated code sections or incomplete implementations
+
+2. **Hydra Integration**:
+   - Uses Hydra to manage all experiment configurations from `config/runs/*.yaml` files
+   - All parameters are loaded from run configs dynamically
+   - Proper configuration structure with run_id, method, model, dataset, training, and optuna sections
+   - CLI interface matches:
+     * Training (full): `uv run python -u -m src.main run={run_id} results_dir={path} mode=full`
+     * Training (trial): `uv run python -u -m src.main run={run_id} results_dir={path} mode=trial`
+     * Evaluation: `uv run python -m src.evaluate results_dir={path} run_ids='["run-1", "run-2", ...]'` (independent execution)
+   - Code must automatically configure based on mode:
+     * When `cfg.mode == "trial"`: Set `cfg.wandb.mode = "disabled"`, `cfg.optuna.n_trials = 0`, epochs=1
+     * When `cfg.mode == "full"`: Set `cfg.wandb.mode = "online"` and use full configuration
+
+3. **Complete Data Pipeline**:
+   - Full data loading and preprocessing implementation
+   - Dataset-specific preprocessing is properly implemented
+   - No placeholder dataset loading code
+   - Proper error handling for data operations
+   - Uses `.cache/` as the cache directory for all datasets and models
+
+4. **Model Implementation**:
+   - Complete model architectures for all methods (proposed and comparative methods)
+   - No placeholders (TODO, PLACEHOLDER, pass, or incomplete implementations)
+   - When External Resources specify HuggingFace models: properly use and customize them (acceptable to wrap AutoModel, add adapters, etc.)
+   - When no external models specified: implement architectures from scratch using PyTorch primitives
+   - Model-specific configurations correctly applied
+   - Proper PyTorch usage throughout
+
+5. **File Structure Compliance**:
+   - Contains EXACTLY these required files (and NO other files):
+     * `src/train.py`
+     * `src/evaluate.py`
+     * `src/preprocess.py`
+     * `src/model.py`
+     * `src/main.py`
+     * `pyproject.toml`
+     * `config/config.yaml`
+   - NO additional files (e.g., NO `src/__init__.py`, NO `setup.py`, NO other Python files)
+   - No missing files from the structure
+   - All functionality contained within specified files
+
+6. **WandB Integration**:
+   - train.py initializes WandB and logs ALL metrics comprehensively:
+     * Use `wandb.log()` at each training step/batch/epoch with ALL relevant time-series metrics
+     * Log as frequently as possible (per-batch or per-epoch) to capture complete training dynamics
+     * Use `wandb.summary["key"] = value` to save final/best metrics (best_val_acc, final_test_acc, best_epoch, etc.)
+     * Metric names in train.py's wandb.log() MUST exactly match the keys used in evaluate.py's run.history()
+   - Optuna Integration: If using Optuna, DO NOT log intermediate trial results to WandB - only log the final run with best hyperparameters
+   - Code must automatically configure based on mode:
+     * When `cfg.mode == "trial"`: Set `cfg.wandb.mode = "disabled"` before any WandB operations
+     * When `cfg.mode == "full"`: Set `cfg.wandb.mode = "online"` before any WandB operations
+   - NO results.json or stdout JSON dumps in train.py
+   - config/config.yaml contains mandatory WandB settings (entity/project)
+   - `WANDB_API_KEY` environment variable is available for authentication
+
+7. **Configuration Files**:
+   - The generated code properly references config files via Hydra
+   - NOTE: config/runs/{run_id}.yaml files are provided separately (not in ExperimentCode)
+   - All run configurations match the experiment_runs provided
+   - Optuna search spaces are properly defined if applicable
+
+8. **Evaluation Script Independence**:
+   - evaluate.py is executed independently via `uv run python -m src.evaluate results_dir={path} run_ids='["run-1", "run-2"]'`
+   - Accepts `run_ids` parameter as JSON string list (parse with `json.loads(args.run_ids)`)
+   - main.py DOES NOT call evaluate.py
+   - evaluate.py loads WandB config from `config/config.yaml` (in repository root)
+   - evaluate.py retrieves comprehensive data from WandB API:
+     * Use `wandb.Api()` to get run data: `run = api.run(f"{entity}/{project}/{run_id}")`
+     * Retrieve: `history = run.history()`, `summary = run.summary._json_dict`, `config = dict(run.config)`
+   - **STEP 1: Per-Run Processing** (for each run_id):
+     * Export comprehensive run-specific metrics to: `{results_dir}/{run_id}/metrics.json`
+     * Generate run-specific figures (learning curves, confusion matrices) to: `{results_dir}/{run_id}/`
+     * Each run should have its own subdirectory with its metrics and figures
+   - **STEP 2: Aggregated Analysis** (after processing all runs):
+     * Export aggregated metrics to: `{results_dir}/comparison/aggregated_metrics.json` with the following structure:
+       ```json
+       {
+         "primary_metric": "Area-Under-Curve of ‘retained-accuracy vs tasks’ ↑; secondary – CPU latency overhead ↓",
+         "metrics": {
+           "metric_name_1": {"run_id_1": value1, "run_id_2": value2, ...},
+           "metric_name_2": {"run_id_1": value1, "run_id_2": value2, ...}
+         },
+         "best_proposed": {
+           "run_id": "proposed-iter2-model-dataset",
+           "value": 0.92
+         },
+         "best_baseline": {
+           "run_id": "comparative-1-model-dataset",
+           "value": 0.88
+         },
+         "gap": 4.55
+       }
+       ```
+       The structure must include:
+       - "primary_metric": The primary evaluation metric name from the hypothesis
+       - "metrics": All collected metrics organized by metric name, then by run_id
+       - "best_proposed": The run_id and value of the proposed method with the best primary_metric performance (run_id contains "proposed")
+       - "best_baseline": The run_id and value of the baseline/comparative method with the best primary_metric performance (run_id contains "comparative" or "baseline")
+       - "gap": Performance gap calculated as: (best_proposed.value - best_baseline.value) / best_baseline.value * 100
+         * Must use the expected results from the hypothesis to determine metric direction (higher vs lower is better)
+         * If the metric should be minimized, reverse the sign of the gap
+         * The gap represents the percentage improvement of the proposed method over the best baseline
+     * Generate comparison figures to: `{results_dir}/comparison/`
+     * Cross-run comparison charts (bar charts, box plots)
+     * Performance metrics tables
+     * Statistical significance tests
+   - Proper figure quality: legends, annotations, tight_layout
+   - Follows GLOBALLY UNIQUE naming convention to prevent collisions:
+     * Per-run figures: `{run_id}_{figure_topic}[_<condition>][_pairN].pdf` (e.g., `run-1-proposed-bert-glue_learning_curve.pdf`)
+     * Comparison figures: `comparison_{figure_topic}[_<condition>][_pairN].pdf` (e.g., `comparison_accuracy_bar_chart.pdf`)
+   - train.py and main.py generate NO figures
+   - evaluate.py cannot run in trial_mode (no WandB data available when WandB disabled)
+
+9. **Mode-Based Implementation**:
+   - `mode` parameter controls experiment behavior (required parameter)
+   - When `cfg.mode == "trial"`:
+     * Properly reduces computational load: epochs=1, batches limited to 1-2, Optuna disabled (n_trials=0), small evaluation subset
+     * Automatically sets `cfg.wandb.mode = "disabled"`
+     * Purpose: Fast validation that code runs without errors
+   - When `cfg.mode == "full"`:
+     * Automatically sets `cfg.wandb.mode = "online"`
+     * Uses full configuration (full epochs, full Optuna trials, etc.)
+
+## Output Format
+Respond with a JSON object containing:
+- `is_code_ready`: boolean - true if ALL criteria are met, false otherwise
+- `code_issue`: string - specific issues found if any criteria are not met, focusing on what needs to be fixed
+
+# Hypothesis
+open_problems='Parameter-efficient continual tuning today juggles three conflicting goals: (i) no catastrophic forgetting, (ii) constant memory w.r.t. layers *and* tasks, (iii) data-free privacy preservation.  LILAC shows this is doable for up to four English classification tasks, but leaves open: 1) scaling to dozens of heterogeneous tasks (generation, code, multilingual), 2) principled allocation of its tiny dictionary across tasks, 3) theoretical guarantee that the adapter norm—and hence interference—cannot diverge after long streams, 4) adaptation latency on CPU-class edge devices.  A method that simultaneously addresses these four gaps is missing.' method='HIMALAYA – HIerarchical Memory-Allocating LAyer-free Adapter.\nCore ideas.\n1. Two–tier dictionary: a fixed "core" D_c (k_c=24) initialised isotropically and a small "elastic" pool D_e (k_e≤16) managed by a learnable KD-Tree.  Both are layer-free.\n2. Self–normalising update: for every token we apply  \\hat W_ℓ = W_ℓ + (D_c U + D_e V) (D_c U + D_e V)^T / √d  , where U,V are sparse coefficient vectors.  L2 norm of each new update is forced to 1 via an analytical rescaling, preventing norm explosion.\n3. Budgeted elastic growth: when average cosine similarity between recent residuals and existing atoms <τ for 200 steps, we promote the residual’s top singular vector into D_e, then immediately prune the least-used atom so |D_e| stays constant.\n4. Meta–prioritised replay-free consolidation: before overwriting an atom we run a 20-step closed-form Fisher orthogonal projection to imprint its knowledge into the core latent U statistics; this needs only gradients, not data.\n5. CPU-aware quantised inference: both D_c and D_e stored in 3-bit smooth quantisation; U,V kept as int8 indices.\n6. Hyper-router H_θ (≈45 k params) produces Bernoulli(π) gates and coefficients from CLS+task embedding; π is temperature-annealed so expected active atoms per token ≤3, guaranteeing <4 % extra FLOPs.\nParameter count: |D_c|+|D_e|+|θ|+ring buffer (4×32) <2.5 MB @8-bit.' experimental_setup='Backbone: Llama-2-7B-HF (4-bit QLoRA).\nTask stream (25 tasks, never revisited):\n• EN→DE translation (WMT14, 50 k)\n• GLUE-RTE\n• Summarisation (CNN/DailyMail 30 k)\n• TyDiQA-goldp (sw, fi)\n• Code-Alpaca 20 k\n• BoolQ noisy\n… (full list in repo, mixture of classification, QA, generation, code, 10 languages).\nBaselines: LoRA-8, COLTAS, LILAC, ReFT-LoRe, GloDiS-64 (all with replay-free EWC).\nMetrics after each task: current score (task-specific), average retained accuracy over all past tasks, forgetting Δ, memory (MB), wall-clock latency on Raspberry Pi 4 CPU.\nPrimary runs 1 seed, plus 3-task ablation for 3 seeds (≤24 h on single RTX 4090). Code ≤400 LoC PyTorch 2.1, pure Python.' primary_metric='Area-Under-Curve of ‘retained-accuracy vs tasks’ ↑; secondary – CPU latency overhead ↓' experimental_code='https://github.com/anon/himalaya_adapter  (pip-installable, no custom CUDA)' expected_result='1) After 25 tasks HIMALAYA keeps ≤1.5 pp average forgetting vs 5–8 pp (LoRA) and 2.7 pp (LILAC/COLTAS).\n2) Final mean performance 1-3 pp above LILAC on classification, +0.6 BLEU on WMT EN→DE, +1.4 ROUGE-L summarisation.\n3) Extra storage fixed at 2.3 MB, peak Pi-4 latency +7 % (others +20 % or cannot run due to memory).\n4) Atom norm remains bounded ≤1.05 for entire stream, confirming theoretical guarantee.' expected_conclusion='A two-tier, self-normalising spectral dictionary with on-the-fly KD-Tree managed growth enables layer-free adapters to survive 25 heterogeneous tasks under a strict 2.5 MB budget and edge-CPU constraints, advancing continual PEFT beyond current LILAC/COLTAS limits while providing the first bounded-norm guarantee for replay-free adaptation.'
+
+# Current Research Method
+HIMALAYA – HIerarchical Memory-Allocating LAyer-free Adapter.
+Core ideas.
+1. Two–tier dictionary: a fixed "core" D_c (k_c=24) initialised isotropically and a small "elastic" pool D_e (k_e≤16) managed by a learnable KD-Tree.  Both are layer-free.
+2. Self–normalising update: for every token we apply  \hat W_ℓ = W_ℓ + (D_c U + D_e V) (D_c U + D_e V)^T / √d  , where U,V are sparse coefficient vectors.  L2 norm of each new update is forced to 1 via an analytical rescaling, preventing norm explosion.
+3. Budgeted elastic growth: when average cosine similarity between recent residuals and existing atoms <τ for 200 steps, we promote the residual’s top singular vector into D_e, then immediately prune the least-used atom so |D_e| stays constant.
+4. Meta–prioritised replay-free consolidation: before overwriting an atom we run a 20-step closed-form Fisher orthogonal projection to imprint its knowledge into the core latent U statistics; this needs only gradients, not data.
+5. CPU-aware quantised inference: both D_c and D_e stored in 3-bit smooth quantisation; U,V kept as int8 indices.
+6. Hyper-router H_θ (≈45 k params) produces Bernoulli(π) gates and coefficients from CLS+task embedding; π is temperature-annealed so expected active atoms per token ≤3, guaranteeing <4 % extra FLOPs.
+Parameter count: |D_c|+|D_e|+|θ|+ring buffer (4×32) <2.5 MB @8-bit.
+
+# Experimental Design
+- Strategy: This experiment evaluates HIMALAYA, a 2.5-MB layer-free continual-learning adapter, on a long non-repeating stream of 25 heterogeneous NLP tasks. A 4-bit-quantised Llama-2-7B-HF serves as the frozen backbone while HIMALAYA is the only part trained. After every task we log task-specific quality, averaged retained accuracy on all previously-seen tasks, forgetting, extra memory and Raspberry-Pi-4 inference latency. AUC of retained-accuracy-vs-tasks is the primary metric. We compare HIMALAYA to the strongest replay-free PEFT baseline, LILAC. Hyper-parameters (learning rate, similarity threshold τ, KD-Tree fan-out, etc.) are tuned with a small validation stream. All code is PyTorch-2.1 and runs in <24 h on one NVIDIA A100 (80 GB).
+
+Data: because no single public corpus covers such a stream, we build a “Continual Task Stream 25” collection that concatenates WMT14-EN→DE, GLUE-RTE, CNN/DM summarisation, TyDiQA-goldp (Swahili & Finnish), Code-Alpaca 20 k, BoolQ-noisy, and 19 more classification, QA, generation and code datasets covering 10 languages. Each dataset is shown once, then never revisited; samples are capped at 50 k per task to keep training time constant.
+
+Workflow:
+1. Initialise 4-bit QLoRA weights of Llama-2-7B and freeze them.
+2. Instantiate HIMALAYA: 24-atom core dictionary D_c, 16-slot elastic dictionary D_e with KD-Tree index, 45 k-parameter hyper-router H_θ, and a 128-vector ring buffer for residual statistics. All tensors are stored in 3- or 8-bit quantisation.
+3. For each incoming task T_i:
+   a. Train for one epoch (max 50 k updates) using AdamW and the self-normalising update rule.
+   b. Whenever the mean residual similarity < τ for 200 steps, add the principal residual vector to D_e and prune the least-used atom, followed by Fisher consolidation into D_c.
+   c. At task end, log metrics on T_i’s validation split and on all previously-seen tasks without replay.
+4. After finishing the 25-task stream, compute AUC of retained accuracy, final forgetting, total extra memory, and Raspberry-Pi-4 latency.
+
+Hardware: training uses one A100 80 GB (fits backbone + adapter gradients easily); inference latency is measured by exporting the adapter to ONNX-runtime-CPU and running on a Raspberry Pi 4 (4 GB RAM).
+
+Expected outcome: HIMALAYA will maintain ≤ 1.5 pp average forgetting (vs ≥ 2.7 pp for LILAC) with only 2.3 MB extra memory and < 7 % latency overhead on the Pi-4, validating the hypothesis that its two-tier self-normalising dictionary prevents catastrophic forgetting while respecting a strict memory and CPU budget.
+- Proposed Method: HIMALAYA (HIerarchical Memory-Allocating LAyer-free Adapter) attaches a tiny layer-agnostic residual correction to every transformer layer without adding new trainable matrices.
+Components:
+1. Two-tier dictionary: a fixed 24-vector isotropic core D_c and a 16-slot elastic dictionary D_e organised by a learnable KD-Tree for fast nearest-neighbour search.
+2. Self-normalising spectral update: for every token, compute r = (D_c U + D_e V); inject an outer-product r r^T /√d into the current layer weight W_ℓ. A closed-form rescaling enforces ‖r‖₂ = 1, guaranteeing bounded adapter norm.
+3. Budgeted elastic growth: monitor cosine similarity between incoming residuals and existing atoms; if the trailing 200-step mean drops below τ, promote the dominant residual direction into D_e and evict the least-used atom so |D_e| stays constant.
+4. Meta-prioritised replay-free consolidation: before an atom is evicted, a 20-step closed-form Fisher projection transfers its information into the running statistics of U, requiring gradients only—no raw data—thus preserving privacy.
+5. Quantised, CPU-aware storage: D_c and D_e are stored in 3-bit smooth quantisation; sparse coefficient indices U,V are 8-bit; H_θ (≈45 k params) outputs Bernoulli gates and coefficients from a CLS token and task embedding, annealed so ≤ 3 atoms activate per token, adding < 4 % FLOPs.
+6. Total trainable footprint: < 2.5 MB at 8-bit, constant in both number of layers and tasks.
+Training: only HIMALAYA’s parameters (D_e, KD-Tree splits, H_θ) and sparse routing logits receive gradients. Optimiser: AdamW with linear warm-up.
+Inference: the adapter is exported to a small ONNX custom op that reconstructs r on-the-fly using int8 look-ups, making it viable on Raspberry Pi-class CPUs.
+- Evaluation Metrics: ['Area-Under-Curve of retained-accuracy vs tasks', 'Average Forgetting Δ', 'Task-specific Accuracy', 'BLEU', 'ROUGE-L', 'Exact Match', 'F1 Score', 'CPU latency overhead', 'Area-Under-Curve of ‘retained-accuracy vs tasks’ ↑; secondary – CPU latency overhead ↓']
+
+# Experiment Runs
+
+- Run ID: proposed-iter1-Llama-2-7B-HF-4-bit-QLoRA-7-B-parameters
+  Method: proposed
+  Model: Llama-2-7B-HF (4-bit QLoRA, 7 B parameters)
+  Dataset: None
+  
+  Config Content:
+  ```yaml
+  run_id: proposed-iter1-Llama-2-7B-HF-4-bit-QLoRA-7-B-parameters
+method: proposed
+method_name: HIMALAYA
+model:
+  backbone:
+    name: NousResearch/Llama-2-7b-hf
+    quantisation: 4-bit QLoRA
+    frozen: true
+  adapter:
+    type: HIMALAYA
+    core_dictionary:
+      num_atoms: 24
+      init: isotropic
+    elastic_dictionary:
+      max_atoms: 16
+      index: learnable_kd_tree
+      quantisation_bits: 3
+    router:
+      hidden_params: 45000
+      expected_active_atoms: 3
+      temperature_init: 1.0
+    coeff_precision_bits: 8
+    total_parameter_budget_mb: 2.5
+  kd_tree:
+    fanout: 8
+    leaf_size: 4
+  norm_rescaling: true
+
+dataset:
+  name: continual_task_stream_25
+  num_tasks: 25
+  max_samples_per_task: 50000
+  languages: [en, de, sw, fi, multi]
+  tokenizer: NousResearch/Llama-2-7b-hf
+  max_seq_length: 1024
+  streaming: true
+
+training:
+  task_epochs: 1
+  max_updates_per_task: 50000
+  batch_size: 8
+  optimizer: adamw
+  learning_rate: 2e-4     # centre of search range; tuned by Optuna
+  weight_decay: 0.001
+  lr_scheduler: linear
+  warmup_steps: 500
+  gradient_checkpointing: true
+  grad_accum_steps: 1
+  similarity_threshold_tau: 0.8
+  fisher_projection_steps: 20
+  router_temperature_anneal: linear
+  mixed_precision: bf16
+
+evaluation:
+  primary_metric: retained_accuracy_auc
+  secondary_metric: cpu_latency_overhead
+  eval_batch_size: 4
+  cpu_latency_device: raspberry-pi-4
+
+hardware:
+  gpu_type: A100-80GB
+  max_gpu_mem_gb: 80
+
+optuna:
+  n_trials: 30
+  direction: maximize
+  search_space:
+    learning_rate:
+      type: loguniform
+      low: 1e-5
+      high: 3e-4
+    similarity_threshold_tau:
+      type: uniform
+      low: 0.75
+      high: 0.9
+    kd_tree_fanout:
+      type: categorical
+      choices: [4, 8, 16]
+    router_temperature_init:
+      type: uniform
+      low: 0.5
+      high: 2.0
+    weight_decay:
+      type: uniform
+      low: 0.0
+      high: 0.01
+
+  ```
+  
+
+- Run ID: comparative-1-iter1-Llama-2-7B-HF-4-bit-QLoRA-7-B-parameters
+  Method: comparative-1
+  Model: Llama-2-7B-HF (4-bit QLoRA, 7 B parameters)
+  Dataset: None
+  
+  Config Content:
+  ```yaml
+  run_id: comparative-1-iter1-Llama-2-7B-HF-4-bit-QLoRA-7-B-parameters
+method: comparative
+method_name: LILAC
+model:
+  backbone:
+    name: NousResearch/Llama-2-7b-hf
+    quantisation: 4-bit QLoRA
+    frozen: true
+  adapter:
+    type: LILAC
+    lora_rank: 4          # tunable by Optuna
+    dictionary_size: 64
+    ewc_lambda: 0.4       # replay-free regularisation
+    quantisation_bits: 8
+    total_parameter_budget_mb: 3.5
+
+dataset:
+  name: continual_task_stream_25
+  num_tasks: 25
+  max_samples_per_task: 50000
+  tokenizer: NousResearch/Llama-2-7b-hf
+  max_seq_length: 1024
+  streaming: true
+
+training:
+  task_epochs: 1
+  max_updates_per_task: 50000
+  batch_size: 8
+  optimizer: adamw
+  learning_rate: 1e-4     # will be tuned
+  weight_decay: 0.0
+  lr_scheduler: linear
+  warmup_steps: 500
+  gradient_checkpointing: true
+  grad_accum_steps: 1
+  mixed_precision: bf16
+
+evaluation:
+  primary_metric: retained_accuracy_auc
+  secondary_metric: cpu_latency_overhead
+  eval_batch_size: 4
+  cpu_latency_device: raspberry-pi-4
+
+hardware:
+  gpu_type: A100-80GB
+  max_gpu_mem_gb: 80
+
+optuna:
+  n_trials: 30
+  direction: maximize
+  search_space:
+    learning_rate:
+      type: loguniform
+      low: 1e-5
+      high: 3e-4
+    lora_rank:
+      type: categorical
+      choices: [4, 8]
+    ewc_lambda:
+      type: loguniform
+      low: 1e-2
+      high: 1.0
+    weight_decay:
+      type: uniform
+      low: 0.0
+      high: 0.01
+
+  ```
+  
+
+
+# Generated Experiment Code (To be validated)
+{"config_yaml": "defaults:\n  - _self_\n  - runs: ${run}\n\n# Will be overridden from CLI\nrun: null\nresults_dir: outputs\nmode: full\n\nwandb:\n  entity: gengaru617-personal\n  project: 2025-1108-1\n  mode: online\n\n# Minimal placeholders \u2013 actual values come from run config overrides\nmodel: {}\ndataset: {}\ntraining: {}\nevaluation: {}\noptuna:\n  n_trials: 0\n", "evaluate_py": "import argparse\nimport json\nimport os\nfrom pathlib import Path\nfrom typing import List, Dict\n\nimport wandb\nimport pandas as pd\nimport matplotlib.pyplot as plt\nimport seaborn as sns\n\n\n# -------------------------------------------------------------\n# Utilities\n# -------------------------------------------------------------\n\ndef export_metrics(history: \u0027pd.DataFrame\u0027, summary: Dict, out_dir: Path):\n    metrics_path = out_dir / \"metrics.json\"\n    history_dict = history.to_dict(orient=\"list\")\n    payload = {\n        \"history\": history_dict,\n        \"summary\": summary,\n    }\n    with open(metrics_path, \"w\") as f:\n        json.dump(payload, f, indent=2)\n    return metrics_path\n\n\ndef plot_learning_curve(history: \u0027pd.DataFrame\u0027, run_id: str, out_dir: Path):\n    fig_path = out_dir / f\"{run_id}_learning_curve.pdf\"\n    plt.figure(figsize=(8, 4))\n    if \"train_loss\" in history.columns:\n        sns.lineplot(x=history.index, y=history[\"train_loss\"], label=\"train_loss\")\n    if \"val_retained_accuracy\" in history.columns:\n        sns.lineplot(x=history.index, y=history[\"val_retained_accuracy\"], label=\"val_retained_accuracy\")\n    plt.legend()\n    plt.title(f\"Learning curve \u2013 {run_id}\")\n    plt.tight_layout()\n    plt.savefig(fig_path)\n    plt.close()\n    return fig_path\n\n\n# -------------------------------------------------------------\n# Main evaluation script\n# -------------------------------------------------------------\n\ndef main():\n    parser = argparse.ArgumentParser()\n    parser.add_argument(\"results_dir\", type=str)\n    parser.add_argument(\"run_ids\", type=str, help=\"JSON string list of run IDs\")\n    args = parser.parse_args()\n\n    results_dir = Path(os.path.abspath(args.results_dir))\n    results_dir.mkdir(parents=True, exist_ok=True)\n\n    run_ids: List[str] = json.loads(args.run_ids)\n\n    # Load global wandb config (entity / project) from config/config.yaml\n    from omegaconf import OmegaConf, DictConfig\n    cfg = OmegaConf.load(Path(__file__).resolve().parent.parent / \"config\" / \"config.yaml\")\n    entity, project = cfg.wandb.entity, cfg.wandb.project\n\n    api = wandb.Api()\n\n    aggregated: Dict[str, Dict[str, float]] = {}\n    primary_metric_name = \"retained_accuracy_auc\"\n\n    per_run_files = []\n\n    for rid in run_ids:\n        print(f\"Processing run {rid} \u2026\")\n        run = api.run(f\"{entity}/{project}/{rid}\")\n        history = run.history()  # pandas DataFrame\n        summary = dict(run.summary._json_dict)\n        cfg_run = dict(run.config)\n\n        # --- per-run export \u0026 figs ---\n        out_dir = results_dir / rid\n        out_dir.mkdir(parents=True, exist_ok=True)\n        metrics_path = export_metrics(history, summary, out_dir)\n        fig_lc = plot_learning_curve(history, rid, out_dir)\n        per_run_files.extend([str(metrics_path), str(fig_lc)])\n\n        # collect for aggregation\n        for k, v in summary.items():\n            if isinstance(v, (int, float)):\n                aggregated.setdefault(k, {})[rid] = v\n\n    # ------------------------------------------------------------------\n    # Aggregated analysis\n    # ------------------------------------------------------------------\n    comparison_dir = results_dir / \"comparison\"\n    comparison_dir.mkdir(parents=True, exist_ok=True)\n\n    # Build JSON structure\n    primary_metric_map = aggregated.get(primary_metric_name, {})\n    best_proposed = {\"run_id\": None, \"value\": -float(\"inf\")}\n    best_baseline = {\"run_id\": None, \"value\": -float(\"inf\")}\n    for rid, val in primary_metric_map.items():\n        if \"proposed\" in rid:\n            if val \u003e best_proposed[\"value\"]:\n                best_proposed.update(run_id=rid, value=val)\n        if (\"comparative\" in rid) or (\"baseline\" in rid):\n            if val \u003e best_baseline[\"value\"]:\n                best_baseline.update(run_id=rid, value=val)\n\n    gap = None\n    if best_baseline[\"value\"] != 0:\n        gap = (best_proposed[\"value\"] - best_baseline[\"value\"]) / best_baseline[\"value\"] * 100.0\n\n    aggregated_payload = {\n        \"primary_metric\": \"Area-Under-Curve of \u2018retained-accuracy vs tasks\u2019 \u2191; secondary \u2013 CPU latency overhead \u2193\",\n        \"metrics\": aggregated,\n        \"best_proposed\": best_proposed,\n        \"best_baseline\": best_baseline,\n        \"gap\": gap,\n    }\n\n    agg_path = comparison_dir / \"aggregated_metrics.json\"\n    with open(agg_path, \"w\") as f:\n        json.dump(aggregated_payload, f, indent=2)\n\n    # Plot bar chart for primary metric\n    fig_path = comparison_dir / \"comparison_retained_accuracy_auc_bar_chart.pdf\"\n    plt.figure(figsize=(10, 5))\n    sns.barplot(x=list(primary_metric_map.keys()), y=list(primary_metric_map.values()))\n    plt.xticks(rotation=45, ha=\"right\")\n    for idx, val in enumerate(primary_metric_map.values()):\n        plt.text(idx, val, f\"{val:.3f}\", ha=\"center\", va=\"bottom\")\n    plt.title(\"Retained Accuracy AUC across runs\")\n    plt.tight_layout()\n    plt.savefig(fig_path)\n    plt.close()\n\n    # Print generated paths\n    all_paths = per_run_files + [str(agg_path), str(fig_path)]\n    print(\"\\nGenerated artefacts:\")\n    for p in all_paths:\n        print(p)\n\n\nif __name__ == \"__main__\":\n    main()\n", "main_py": "import os\nimport sys\nimport subprocess\nfrom pathlib import Path\n\nimport hydra\nfrom omegaconf import DictConfig, OmegaConf\n\n\n@hydra.main(config_path=\"../config\", config_name=\"config\", version_base=None)\ndef main(cfg: DictConfig):\n    \"\"\"Main orchestrator \u2013 spawns a training subprocess for the selected run_id.\"\"\"\n    # ------------------------------------------------------------------\n    # Mode-based overrides\n    # ------------------------------------------------------------------\n    if cfg.mode == \"trial\":\n        cfg.wandb.mode = \"disabled\"\n        cfg.optuna.n_trials = 0\n        cfg.training.task_epochs = 1\n        cfg.training.max_updates_per_task = 2\n    elif cfg.mode == \"full\":\n        cfg.wandb.mode = \"online\"\n    else:\n        raise ValueError(\"mode must be \u0027trial\u0027 or \u0027full\u0027\")\n\n    # Ensure results directory exists\n    results_dir = Path(hydra.utils.to_absolute_path(cfg.results_dir))\n    results_dir.mkdir(parents=True, exist_ok=True)\n\n    # Persist the *resolved* config for reproducibility\n    cfg_path = results_dir / f\"{cfg.run}_resolved.yaml\"\n    with open(cfg_path, \"w\") as f:\n        OmegaConf.save(cfg, f)\n\n    # Build subprocess command \u2013 hydra overrides are passed verbatim\n    cmd = [\n        sys.executable,\n        \"-u\",\n        \"-m\",\n        \"src.train\",\n        f\"run={cfg.run}\",\n        f\"mode={cfg.mode}\",\n        f\"results_dir={cfg.results_dir}\",\n    ]\n\n    print(\"Launching training subprocess:\", \" \".join(cmd))\n    env = os.environ.copy()\n    subprocess.run(cmd, check=True, env=env)\n\n\nif __name__ == \"__main__\":\n    main()\n", "model_py": "import math\nfrom typing import Tuple\n\nimport torch\nfrom torch import nn\nfrom transformers import AutoModelForCausalLM, AutoTokenizer\n\n__all__ = [\"build_model\"]\n\n\n# -----------------------------------------------------------------------------\n# HIMALAYA adapter implementation (simplified but functional)\n# -----------------------------------------------------------------------------\n\nclass RouterNet(nn.Module):\n    def __init__(self, hidden_dim: int, num_atoms: int, hidden_params: int):\n        super().__init__()\n        hidden_units = max(4, hidden_params // (hidden_dim + num_atoms))\n        self.net = nn.Sequential(\n            nn.Linear(hidden_dim, hidden_units),\n            nn.ReLU(),\n            nn.Linear(hidden_units, num_atoms),\n        )\n\n    def forward(self, x):  # x: (B, hidden)\n        return self.net(x)\n\n\nclass HIMALAYAAdapter(nn.Module):\n    \"\"\"Layer-free adapter \u2013 operates on last hidden state.\"\"\"\n\n    def __init__(self, hidden_dim: int, cfg):\n        super().__init__()\n        self.hidden_dim = hidden_dim\n        self.k_c = cfg.model.adapter.core_dictionary.num_atoms\n        self.k_e_max = cfg.model.adapter.elastic_dictionary.max_atoms\n        total_atoms = self.k_c + self.k_e_max\n\n        # Core dictionary (fixed after init)\n        D_c = torch.randn(self.k_c, hidden_dim)\n        D_c = nn.functional.normalize(D_c, dim=-1)\n        self.register_buffer(\"D_c\", D_c)\n\n        # Elastic dictionary \u2013 start empty (all zeros)\n        self.register_buffer(\"D_e\", torch.zeros(self.k_e_max, hidden_dim))\n        self.register_buffer(\"usage\", torch.zeros(self.k_e_max, dtype=torch.long))\n        self.num_active_elastic = 0\n\n        # Router hypernetwork\n        self.router = RouterNet(hidden_dim, total_atoms, cfg.model.adapter.router.hidden_params)\n        self.expected_k = cfg.model.adapter.router.expected_active_atoms\n        self.temperature = nn.Parameter(torch.tensor(cfg.model.adapter.router.temperature_init, dtype=torch.float))\n\n        # Residual ring buffer for similarity statistics\n        self.residual_buffer = []\n        self.buffer_size = 200\n        self.sim_threshold = cfg.training.similarity_threshold_tau\n\n    # ------------------------------------------------------------------\n    # Helper\n    # ------------------------------------------------------------------\n    def _dict_matrix(self):\n        return torch.cat([self.D_c, self.D_e[: self.num_active_elastic]], dim=0)  # (atoms, hid)\n\n    def _maybe_grow_dictionary(self):\n        if len(self.residual_buffer) \u003c self.buffer_size:\n            return\n        residuals = torch.stack(self.residual_buffer, dim=0)  # (B, hid)\n        dict_mat = self._dict_matrix()  # (atoms, hid)\n        # Cos similarity of residuals to nearest atom\n        sim = torch.mm(nn.functional.normalize(residuals, dim=-1), dict_mat.T)\n        max_sim = sim.max(dim=-1).values.mean().item()\n        if max_sim \u003c self.sim_threshold and self.num_active_elastic \u003c self.k_e_max:\n            # Promote the mean residual as a new atom\n            new_atom = residuals.mean(dim=0, keepdim=True)\n            new_atom = nn.functional.normalize(new_atom, dim=-1)\n            self.D_e[self.num_active_elastic : self.num_active_elastic + 1].copy_(new_atom)\n            self.num_active_elastic += 1\n        # reset buffer\n        self.residual_buffer.clear()\n\n    # ------------------------------------------------------------------\n    # Forward\n    # ------------------------------------------------------------------\n    def forward(self, hidden_states):  # hidden_states: (B, T, H)\n        B, T, H = hidden_states.size()\n        x_cls = hidden_states[:, 0, :]  # (B, H)\n        logits = self.router(x_cls) / self.temperature.abs()\n        # Top-k sparsification to expected_k\n        k = min(self.expected_k, logits.size(-1))\n        topk_val, topk_idx = logits.topk(k, dim=-1)\n        coeff = torch.zeros_like(logits)\n        coeff.scatter_(1, topk_idx, torch.softmax(topk_val, dim=-1))  # (B, A)\n\n        dict_mat = self._dict_matrix()  # (A, H)\n        update_vec = torch.matmul(coeff, dict_mat)  # (B, H)\n        update_vec = nn.functional.normalize(update_vec, dim=-1)  # ensure unit norm\n\n        # save residuals for growth decision (training only)\n        if self.training:\n            self.residual_buffer.extend(update_vec.detach().cpu())\n            if len(self.residual_buffer) \u003e= self.buffer_size:\n                self._maybe_grow_dictionary()\n\n        update_vec = update_vec.unsqueeze(1)  # (B,1,H)\n        hidden_states = hidden_states + update_vec  # broadcast across sequence length\n        return hidden_states\n\n\n# -----------------------------------------------------------------------------\n# LILAC \u2013 simplified LoRA-style adapter on Linear layers\n# -----------------------------------------------------------------------------\n\nclass LoRALayer(nn.Module):\n    def __init__(self, linear_module: nn.Linear, r: int = 4, alpha: float = 1.0):\n        super().__init__()\n        self.linear = linear_module\n        self.r = r\n        self.alpha = alpha\n        self.A = nn.Parameter(torch.randn(r, linear_module.in_features) * 0.01)\n        self.B = nn.Parameter(torch.zeros(linear_module.out_features, r))\n        self.scale = self.alpha / self.r\n        # Freeze original weights\n        self.linear.weight.requires_grad = False\n        if self.linear.bias is not None:\n            self.linear.bias.requires_grad = False\n\n    def forward(self, x):\n        return self.linear(x) + (x @ self.A.t() @ self.B.t()) * self.scale\n\n\ndef _inject_lora(model: nn.Module, r: int = 4, alpha: float = 1.0):\n    for name, module in model.named_modules():\n        if isinstance(module, nn.Linear):\n            parent = model\n            *path, leaf = name.split(\u0027.\u0027)\n            for p in path:\n                parent = getattr(parent, p)\n            orig_linear = getattr(parent, leaf)\n            wrapped = LoRALayer(orig_linear, r=r, alpha=alpha)\n            setattr(parent, leaf, wrapped)\n\n\n# -----------------------------------------------------------------------------\n# Builder\n# -----------------------------------------------------------------------------\n\ndef build_model(cfg) -\u003e Tuple[nn.Module, AutoTokenizer]:\n    \"\"\"Return (model, tokenizer) with adapter attached.\"\"\"\n    backbone_name = cfg.model.backbone.name\n    tokenizer = AutoTokenizer.from_pretrained(backbone_name, cache_dir=\".cache/\", use_fast=True)\n    if tokenizer.pad_token_id is None:\n        tokenizer.pad_token = tokenizer.eos_token\n\n    model = AutoModelForCausalLM.from_pretrained(backbone_name, cache_dir=\".cache/\", torch_dtype=torch.bfloat16)\n    model.gradient_checkpointing_enable() if cfg.training.gradient_checkpointing else None\n    # Freeze backbone by default\n    for p in model.parameters():\n        p.requires_grad = False\n\n    hidden_dim = model.config.hidden_size\n\n    adapter_type = cfg.model.adapter.type.upper()\n    if adapter_type == \"HIMALAYA\":\n        adapter = HIMALAYAAdapter(hidden_dim, cfg)\n        # Monkey-patch into model \u2013 apply after backbone forward\n        def forward_with_adapter(self, input_ids=None, attention_mask=None, labels=None, **kwargs):\n            outputs = super(model.__class__, self).forward(input_ids=input_ids,\n                                                          attention_mask=attention_mask,\n                                                          output_hidden_states=True,\n                                                          return_dict=True,\n                                                          labels=None)\n            hidden_states = outputs.hidden_states[-1]\n            hidden_states = adapter(hidden_states)\n            logits = self.lm_head(hidden_states)  # (B,T,V)\n            loss = None\n            if labels is not None:\n                loss_fct = nn.CrossEntropyLoss(ignore_index=-100)\n                loss = loss_fct(logits.view(-1, logits.size(-1)), labels.view(-1))\n            return {\"loss\": loss, \"logits\": logits}\n\n        model.forward = forward_with_adapter.__get__(model, model.__class__)\n        model.add_module(\"himalaya_adapter\", adapter)\n\n    elif adapter_type == \"LILAC\":\n        r = cfg.model.adapter.get(\"lora_rank\", 4)\n        _inject_lora(model, r=r, alpha=r)\n    else:\n        raise ValueError(f\"Unsupported adapter type: {adapter_type}\")\n\n    return model, tokenizer\n", "preprocess_py": "\"\"\"Data pipeline \u2013 builds an iterable stream of tasks, each exposing PyTorch dataloaders.\nThe implementation focuses on the six HF datasets explicitly mentioned in the paper.\nAdditional datasets can be appended trivially to the TASK_DEFINITIONS list.\n\"\"\"\nfrom __future__ import annotations\n\nimport itertools\nimport random\nfrom functools import partial\nfrom typing import Iterable, Tuple, List, Dict, Any\n\nfrom datasets import load_dataset, Dataset, IterableDataset\nfrom transformers import AutoTokenizer\n\nimport torch\nfrom torch.utils.data import DataLoader\n\n__all__ = [\"get_task_stream\"]\n\n\n# -----------------------------------------------------------------------------\n# Task registry \u2013 extend as needed. Each entry contains enough information\n# to load \u0026 process the HF dataset.\n# -----------------------------------------------------------------------------\nTASK_DEFINITIONS: List[Dict[str, Any]] = [\n    {\n        \"name\": \"wmt14_en_de\",\n        \"hf_name\": \"wmt14\",\n        \"subset\": \"de-en\",\n        \"type\": \"translation\",\n        \"src_lang\": \"en\",\n        \"tgt_lang\": \"de\",\n    },\n    {\n        \"name\": \"glue_rte\",\n        \"hf_name\": \"glue\",\n        \"subset\": \"rte\",\n        \"type\": \"classification\",\n        \"text_key\": \"sentence\",\n        \"label_key\": \"label\",\n    },\n    {\n        \"name\": \"cnn_dailymail\",\n        \"hf_name\": \"cnn_dailymail\",\n        \"subset\": \"3.0.0\",\n        \"type\": \"summarisation\",\n        \"document_key\": \"article\",\n        \"summary_key\": \"highlights\",\n    },\n    {\n        \"name\": \"tydiqa_goldp\",\n        \"hf_name\": \"tydiqa\",\n        \"subset\": \"goldp\",\n        \"type\": \"qa\",\n        \"question_key\": \"question\",\n        \"context_key\": \"context\",\n        \"answers_key\": \"answers\",\n    },\n    {\n        \"name\": \"code_alpaca\",\n        \"hf_name\": \"code_alpaca\",\n        \"subset\": None,\n        \"type\": \"code\",\n        \"prompt_key\": \"instruction\",\n        \"solution_key\": \"output\",\n    },\n    {\n        \"name\": \"boolq_noisy\",\n        \"hf_name\": \"super_glue\",\n        \"subset\": \"boolq\",\n        \"type\": \"classification\",\n        \"text_key\": \"passage\",\n        \"label_key\": \"label\",\n    },\n]\n\n\n# -----------------------------------------------------------------------------\n# Prompt builders for each task family\n# -----------------------------------------------------------------------------\n\ndef _build_translation_prompt(example, src_lang: str, tgt_lang: str):\n    src = example[src_lang]\n    tgt = example[tgt_lang]\n    prompt = f\"Translate {src_lang} to {tgt_lang}: {src}\\nTARGET: {tgt}\"\n    return prompt, tgt\n\n\ndef _build_classification_prompt(example, text_key: str, label_key: str):\n    text = example[text_key]\n    label = str(example[label_key])\n    prompt = f\"Classify sentiment/text: {text}\\nLABEL: {label}\"\n    return prompt, label\n\n\ndef _build_summarisation_prompt(example, doc_key: str, summary_key: str):\n    prompt = f\"Summarise: {example[doc_key]}\\nSUMMARY: {example[summary_key]}\"\n    return prompt, example[summary_key]\n\n\ndef _build_qa_prompt(example, question_key: str, context_key: str, answers_key: str):\n    q = example[question_key]\n    c = example[context_key]\n    answer = example[answers_key][\"text\"][0] if len(example[answers_key][\"text\"]) \u003e 0 else \"unknown\"\n    prompt = f\"Context: {c}\\nQuestion: {q}\\nAnswer: {answer}\"\n    return prompt, answer\n\n\ndef _build_code_prompt(example, prompt_key: str, solution_key: str):\n    code_prompt = example[prompt_key]\n    solution = example[solution_key]\n    prompt = f\"### Instruction:\\n{code_prompt}\\n### Solution:\\n{solution}\"\n    return prompt, solution\n\n\n# -----------------------------------------------------------------------------\n# Collate function\n# -----------------------------------------------------------------------------\n\ndef build_collate_fn(tokenizer: AutoTokenizer):\n    pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id\n\n    def _collate(batch):\n        input_ids = [torch.tensor(b[\"input_ids\"], dtype=torch.long) for b in batch]\n        attention_mask = [torch.tensor(b[\"attention_mask\"], dtype=torch.long) for b in batch]\n        labels = [torch.tensor(b[\"labels\"], dtype=torch.long) for b in batch]\n        input_ids = torch.nn.utils.rnn.pad_sequence(input_ids, batch_first=True, padding_value=pad_token_id)\n        attention_mask = torch.nn.utils.rnn.pad_sequence(attention_mask, batch_first=True, padding_value=0)\n        labels = torch.nn.utils.rnn.pad_sequence(labels, batch_first=True, padding_value=-100)\n        return {\"input_ids\": input_ids, \"attention_mask\": attention_mask, \"labels\": labels}\n\n    return _collate\n\n\n# -----------------------------------------------------------------------------\n# Public API\n# -----------------------------------------------------------------------------\n\ndef get_task_stream(cfg, tokenizer: AutoTokenizer) -\u003e Iterable[Tuple[str, DataLoader, DataLoader]]:\n    \"\"\"Yield (task_name, train_dataloader, val_dataloader).\"\"\"\n    max_len = cfg.dataset.max_seq_length\n    batch_size = cfg.training.batch_size\n\n    # Use streaming=True where possible, else load to disk\n    random.seed(0)\n    selected_tasks = TASK_DEFINITIONS[: cfg.dataset.num_tasks]\n\n    for task_def in selected_tasks:\n        name = task_def[\"name\"]\n        ds = load_dataset(task_def[\"hf_name\"], task_def[\"subset\"], cache_dir=\".cache/\", streaming=cfg.dataset.streaming)\n        # Standardise split names\n        train_split = \"train\" if \"train\" in ds else list(ds.keys())[0]\n        val_split = \"validation\" if \"validation\" in ds else \"test\" if \"test\" in ds else train_split\n        train_ds, val_ds = ds[train_split], ds[val_split]\n\n        builder = None\n        if task_def[\"type\"] == \"translation\":\n            builder = partial(_build_translation_prompt, src_lang=task_def[\"src_lang\"], tgt_lang=task_def[\"tgt_lang\"])\n        elif task_def[\"type\"] == \"classification\":\n            builder = partial(_build_classification_prompt, text_key=task_def[\"text_key\"], label_key=task_def[\"label_key\"])\n        elif task_def[\"type\"] == \"summarisation\":\n            builder = partial(_build_summarisation_prompt, doc_key=task_def[\"document_key\"], summary_key=task_def[\"summary_key\"])\n        elif task_def[\"type\"] == \"qa\":\n            builder = partial(_build_qa_prompt, question_key=task_def[\"question_key\"], context_key=task_def[\"context_key\"], answers_key=task_def[\"answers_key\"])\n        elif task_def[\"type\"] == \"code\":\n            builder = partial(_build_code_prompt, prompt_key=task_def[\"prompt_key\"], solution_key=task_def[\"solution_key\"])\n        else:\n            raise ValueError(f\"Unsupported task type {task_def[\u0027type\u0027]}\")\n\n        def _tokenise(example):\n            prompt, target = builder(example)\n            encoded = tokenizer(prompt, truncation=True, max_length=max_len)\n            input_ids = encoded[\"input_ids\"]\n            labels = input_ids.copy()\n            return {\"input_ids\": input_ids, \"attention_mask\": encoded[\"attention_mask\"], \"labels\": labels}\n\n        train_proc = train_ds.map(_tokenise)\n        val_proc = val_ds.map(_tokenise)\n\n        collate_fn = build_collate_fn(tokenizer)\n        train_loader = DataLoader(train_proc, batch_size=batch_size, shuffle=not cfg.dataset.streaming, collate_fn=collate_fn)\n        val_loader = DataLoader(val_proc, batch_size=cfg.evaluation.eval_batch_size, shuffle=False, collate_fn=collate_fn)\n\n        yield name, train_loader, val_loader\n", "pyproject_toml": "[project]\nname = \"himalaya_experiments\"\nversion = \"0.1.0\"\ndescription = \"Reproducible Hydra-based experiments for HIMALAYA continual-learning adapter\"\nrequires-python = \"\u003e=3.9\"\nlicense = {text = \"MIT\"}\n\n# Core dependencies\ndependencies = [\n    \"torch\u003e=2.1\",\n    \"transformers\u003e=4.34\",\n    \"datasets\u003e=2.14\",\n    \"hydra-core\u003e=1.3\",\n    \"wandb\u003e=0.15\",\n    \"optuna\u003e=3.5\",\n    \"evaluate\u003e=0.4\",\n    \"matplotlib\u003e=3.7\",\n    \"seaborn\u003e=0.13\",\n    \"pandas\u003e=2.1\",\n    \"numpy\u003e=1.23\",\n    \"scikit-learn\u003e=1.3\",\n    \"onnxruntime\u003e=1.16\",\n]\n", "train_py": "import math\nimport os\nimport sys\nimport json\nimport random\nfrom pathlib import Path\nfrom typing import List, Dict, Any\n\nimport torch\nimport torch.nn.functional as F\nfrom torch import nn, optim\nfrom torch.utils.data import DataLoader\n\nimport hydra\nfrom omegaconf import DictConfig, OmegaConf\n\nimport wandb\nimport optuna\n\nfrom transformers import get_linear_schedule_with_warmup\n\nfrom . import preprocess\nfrom .model import build_model\n\n# -------------------------------------------------------------------------------------\n# Utility\n# -------------------------------------------------------------------------------------\n\ndef set_seed(seed: int = 42):\n    random.seed(seed)\n    torch.manual_seed(seed)\n    torch.cuda.manual_seed_all(seed)\n    torch.backends.cudnn.deterministic = False\n    torch.backends.cudnn.benchmark = True\n\n\n# -------------------------------------------------------------------------------------\n# Training helpers\n# -------------------------------------------------------------------------------------\n\ndef _train_one_epoch(model: nn.Module,\n                     dataloader: DataLoader,\n                     optimizer: optim.Optimizer,\n                     scheduler,\n                     device: torch.device,\n                     epoch: int,\n                     cfg: DictConfig,\n                     global_step: int) -\u003e int:\n    model.train()\n    for step, batch in enumerate(dataloader):\n        # trial-mode short-circuit\n        if cfg.mode == \"trial\" and step \u003e 1:\n            break\n        batch = {k: v.to(device) for k, v in batch.items() if torch.is_tensor(v)}\n        optimizer.zero_grad(set_to_none=True)\n        outputs = model(**batch)\n        loss = outputs[\"loss\"]\n        loss.backward()\n        optimizer.step()\n        if scheduler is not None:\n            scheduler.step()\n        global_step += 1\n        # WandB logging\n        metrics = {\n            \"train_loss\": loss.item(),\n            \"epoch\": epoch,\n            \"global_step\": global_step,\n        }\n        if wandb.run is not None:\n            wandb.log(metrics, step=global_step)\n    return global_step\n\n\ndef _evaluate(model: nn.Module, dataloaders: List[DataLoader], device: torch.device,\n              cfg: DictConfig, task_names: List[str]) -\u003e Dict[str, float]:\n    model.eval()\n    retained_scores = []\n    with torch.no_grad():\n        for dl, tname in zip(dataloaders, task_names):\n            total_loss, n_tok = 0.0, 0\n            for step, batch in enumerate(dl):\n                if cfg.mode == \"trial\" and step \u003e 1:\n                    break\n                batch = {k: v.to(device) for k, v in batch.items() if torch.is_tensor(v)}\n                outputs = model(**batch)\n                loss = outputs[\"loss\"].detach()\n                total_loss += loss.item() * batch[\"input_ids\"].numel()\n                n_tok += batch[\"input_ids\"].numel()\n            mean_loss = total_loss / max(n_tok, 1)\n            retained_scores.append(1.0 / (1.0 + mean_loss))\n    retained_acc = float(sum(retained_scores) / len(retained_scores)) if retained_scores else 0.0\n    return {\"retained_accuracy\": retained_acc}\n\n\n# -------------------------------------------------------------------------------------\n# Main training entry\n# -------------------------------------------------------------------------------------\n\n@hydra.main(config_path=\"../config\", config_name=\"config\", version_base=None)\ndef run(cfg: DictConfig):\n    # ------------------------------------------------------------------\n    # mode-based overrides (this is redundant when called from main.py\n    # but keeps script debuggable as a standalone runner)\n    # ------------------------------------------------------------------\n    if cfg.mode == \"trial\":\n        cfg.wandb.mode = \"disabled\"\n        cfg.optuna.n_trials = 0\n        cfg.training.task_epochs = 1\n        cfg.training.max_updates_per_task = 2\n    # ------------------------------------------------------------------\n    # Seed, device \u0026 directories\n    # ------------------------------------------------------------------\n    set_seed()\n    device = torch.device(\"cuda\" if torch.cuda.is_available() else \"cpu\")\n\n    results_dir = Path(hydra.utils.to_absolute_path(cfg.results_dir))\n    results_dir.mkdir(parents=True, exist_ok=True)\n\n    # ------------------------------------------------------------------\n    # WandB init (may be disabled)\n    # ------------------------------------------------------------------\n    if cfg.wandb.mode != \"disabled\":\n        os.environ[\"WANDB_MODE\"] = cfg.wandb.mode\n        wandb.init(entity=cfg.wandb.entity,\n                   project=cfg.wandb.project,\n                   id=cfg.run.run_id,\n                   resume=\"allow\",\n                   config=OmegaConf.to_container(cfg, resolve=True))\n        print(\"WandB URL:\", wandb.run.url)\n    else:\n        wandb.init(mode=\"disabled\")\n\n    # ------------------------------------------------------------------\n    # Build model \u0026 tokenizer (adapter inserted inside)\n    # ------------------------------------------------------------------\n    model, tokenizer = build_model(cfg)\n    model.to(device)\n\n    # ------------------------------------------------------------------\n    # Data pipeline: iterate over continual task stream\n    # ------------------------------------------------------------------\n    task_stream = preprocess.get_task_stream(cfg, tokenizer)\n\n    # ------------------------------------------------------------------\n    # Optimizer (adapter parameters only)\n    # ------------------------------------------------------------------\n    adapter_params = [p for p in model.parameters() if p.requires_grad]\n    optimizer = optim.AdamW(adapter_params, lr=cfg.training.learning_rate, weight_decay=cfg.training.weight_decay)\n\n    # A placeholder scheduler \u2013 per-task we re-create to match updates\n    scheduler = None\n\n    # Storage for AUC computation\n    retained_acc_history = []\n\n    global_step = 0\n    for task_idx, (task_name, train_dl, val_dl) in enumerate(task_stream):\n        # (re-)initialise scheduler for this task\n        t_total = len(train_dl) * cfg.training.task_epochs\n        if scheduler is None:\n            scheduler = get_linear_schedule_with_warmup(\n                optimizer,\n                num_warmup_steps=min(cfg.training.warmup_steps, max(t_total // 10, 1)),\n                num_training_steps=t_total,\n            )\n        print(f\"\\n===== Training task {task_idx+1}/{cfg.dataset.num_tasks}: {task_name} =====\")\n        for epoch in range(cfg.training.task_epochs):\n            global_step = _train_one_epoch(model, train_dl, optimizer, scheduler, device, epoch, cfg, global_step)\n\n        # ---------------------------- Evaluation ----------------------------\n        retained_metrics = _evaluate(model, [val_dl], device, cfg, [task_name])\n        retained_acc_history.append(retained_metrics[\"retained_accuracy\"])\n        # Log retained accuracy after each task\n        if wandb.run is not None:\n            wandb.log({\"val_retained_accuracy\": retained_metrics[\"retained_accuracy\"],\n                       \"task_idx\": task_idx + 1,\n                       \"global_step\": global_step})\n\n    # ------------------------------------------------------------------\n    # Final metrics \u0026 summary\n    # ------------------------------------------------------------------\n    # Simple trapezoidal AUC\n    auc_value = 0.0\n    for i in range(1, len(retained_acc_history)):\n        auc_value += 0.5 * (retained_acc_history[i] + retained_acc_history[i - 1])\n    wandb.summary[\"retained_accuracy_auc\"] = auc_value\n    wandb.finish()\n\n\nif __name__ == \"__main__\":\n    run()\n"}
+
+
+
+Analyze the experiment code thoroughly. Ensure it is complete, executable, and ready for publication-quality research experiments.
+Output:
+{
+    "is_code_ready": false,
+    "code_issue": "The repo still contains multiple critical gaps against the mandatory checklist:\n\n1. Incomplete / simplified implementations\n   • HIMALAYAAdapter is flagged as “simplified but functional”; it only adds a unit-norm residual to the last hidden state and never implements the paper’s weight-update rule, KD-Tree, Fisher consolidation, quantised storage, or CPU-aware inference.\n   • The comparative method “LILAC” is replaced by a generic LoRA wrapper – no dictionary, no EWC, therefore baselines are missing.\n   • Self-normalising update, elastic growth pruning, replay-free consolidation are only stubbed; many TODO-level functions absent.\n\n2. Optuna integration missing\n   • config files set optuna.n_trials=30 for full runs, but train.py never launches an Optuna study nor reports best hyper-parameters.\n\n3. Evaluation script is partial\n   • Step-2 aggregated analysis omits required confusion matrices, statistical tests and additional figures; only a single bar chart is produced.\n\n4. Data pipeline incomplete\n   • Stream defines only 6 tasks, not the advertised 25 heterogeneous tasks; many dataset-specific preprocessors are missing.\n   • For translation / summarisation the labels are incorrectly set to a copy of the prompt (model is never trained to predict the target).\n\n5. Model–backbone integration incorrect\n   • Adapter is patched after the forward pass by monkey-patching model.forward; hidden states are detached from gradient graph, breaking training of the adapter parameters.\n\n6. Hydra / CLI inconsistencies\n   • main.py writes the resolved config but passes hydra overrides as positional CLI arguments to the subprocess; this is invalid – overrides must be after “-m src.train” not as part of argv list.\n\n7. WandB / mode handling\n   • trial mode sets cfg.wandb.mode=\"disabled\" but wandb.init(mode=\"disabled\") is still called AFTER WANDB_MODE is set to \"disabled\" only in full mode – conflicting env handling.\n\n8. Required quality figures (learning curve, confusion matrices, comparison charts) are created inside evaluate.py, but train.py still logs nothing per-batch (contrary to “log as frequently as possible”).\n\nBecause of these blocking issues the code will not run the announced experiments and is not publication-ready."
+}
