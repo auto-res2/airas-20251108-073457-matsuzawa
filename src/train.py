@@ -176,7 +176,10 @@ def train_full_stream(cfg: DictConfig, trial: Optional[optuna.trial.Trial] = Non
         lr=cfg.training.learning_rate,
         weight_decay=cfg.training.weight_decay,
     )
-    scaler = GradScaler('cuda', enabled=cfg.training.mixed_precision and torch.cuda.is_available())
+    # GradScaler only works with float32 models + autocast to float16
+    # Since we load the model in float16 and use QLoRA, we must disable GradScaler
+    use_grad_scaler = False
+    scaler = GradScaler('cuda', enabled=use_grad_scaler)
 
     # ---------------- WandB init -----------------------------------------
     if use_wandb:
@@ -221,7 +224,8 @@ def train_full_stream(cfg: DictConfig, trial: Optional[optuna.trial.Trial] = Non
                     break
                 batch = _move_to_device(batch, device)
                 optimizer.zero_grad(set_to_none=True)
-                with autocast('cuda', enabled=cfg.training.mixed_precision and torch.cuda.is_available()):
+                # Autocast is disabled because model is already in float16
+                with autocast('cuda', enabled=False):
                     outputs = model(**batch)
                     loss = outputs["loss"]
                     # EWC regulariser for LILAC baseline -------------------
