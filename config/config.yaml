@@ -3,7 +3,7 @@ defaults:
   - runs: ${run}
 
 # CLI overrides ----------------------------------------------------------------
-run: null
+run: proposed-iter1-Llama-2-7B-HF-4-bit-QLoRA-7-B-parameters
 results_dir: outputs
 mode: full
 
