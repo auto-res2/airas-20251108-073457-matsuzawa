@@ -219,6 +219,8 @@ def build_model(cfg):
 
     if adapter_type == "HIMALAYA":
         adapter = HIMALAYAAdapter(hidden, cfg)
+        # Ensure adapter matches model dtype (float16)
+        adapter = adapter.to(dtype=model.dtype)
         orig_forward = model.forward
 
         def patched_forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
