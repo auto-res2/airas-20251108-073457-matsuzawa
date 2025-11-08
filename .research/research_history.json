@@ -723,7 +723,48 @@
     "iterations": [
       {
         "iteration_id": 1,
-        "method": "HIMALAYA – HIerarchical Memory-Allocating LAyer-free Adapter.\nCore ideas.\n1. Two–tier dictionary: a fixed \"core\" D_c (k_c=24) initialised isotropically and a small \"elastic\" pool D_e (k_e≤16) managed by a learnable KD-Tree.  Both are layer-free.\n2. Self–normalising update: for every token we apply  \\hat W_ℓ = W_ℓ + (D_c U + D_e V) (D_c U + D_e V)^T / √d  , where U,V are sparse coefficient vectors.  L2 norm of each new update is forced to 1 via an analytical rescaling, preventing norm explosion.\n3. Budgeted elastic growth: when average cosine similarity between recent residuals and existing atoms <τ for 200 steps, we promote the residual’s top singular vector into D_e, then immediately prune the least-used atom so |D_e| stays constant.\n4. Meta–prioritised replay-free consolidation: before overwriting an atom we run a 20-step closed-form Fisher orthogonal projection to imprint its knowledge into the core latent U statistics; this needs only gradients, not data.\n5. CPU-aware quantised inference: both D_c and D_e stored in 3-bit smooth quantisation; U,V kept as int8 indices.\n6. Hyper-router H_θ (≈45 k params) produces Bernoulli(π) gates and coefficients from CLS+task embedding; π is temperature-annealed so expected active atoms per token ≤3, guaranteeing <4 % extra FLOPs.\nParameter count: |D_c|+|D_e|+|θ|+ring buffer (4×32) <2.5 MB @8-bit."
+        "method": "HIMALAYA – HIerarchical Memory-Allocating LAyer-free Adapter.\nCore ideas.\n1. Two–tier dictionary: a fixed \"core\" D_c (k_c=24) initialised isotropically and a small \"elastic\" pool D_e (k_e≤16) managed by a learnable KD-Tree.  Both are layer-free.\n2. Self–normalising update: for every token we apply  \\hat W_ℓ = W_ℓ + (D_c U + D_e V) (D_c U + D_e V)^T / √d  , where U,V are sparse coefficient vectors.  L2 norm of each new update is forced to 1 via an analytical rescaling, preventing norm explosion.\n3. Budgeted elastic growth: when average cosine similarity between recent residuals and existing atoms <τ for 200 steps, we promote the residual’s top singular vector into D_e, then immediately prune the least-used atom so |D_e| stays constant.\n4. Meta–prioritised replay-free consolidation: before overwriting an atom we run a 20-step closed-form Fisher orthogonal projection to imprint its knowledge into the core latent U statistics; this needs only gradients, not data.\n5. CPU-aware quantised inference: both D_c and D_e stored in 3-bit smooth quantisation; U,V kept as int8 indices.\n6. Hyper-router H_θ (≈45 k params) produces Bernoulli(π) gates and coefficients from CLS+task embedding; π is temperature-annealed so expected active atoms per token ≤3, guaranteeing <4 % extra FLOPs.\nParameter count: |D_c|+|D_e|+|θ|+ring buffer (4×32) <2.5 MB @8-bit.",
+        "experimental_design": {
+          "experiment_summary": "This experiment evaluates HIMALAYA, a 2.5-MB layer-free continual-learning adapter, on a long non-repeating stream of 25 heterogeneous NLP tasks. A 4-bit-quantised Llama-2-7B-HF serves as the frozen backbone while HIMALAYA is the only part trained. After every task we log task-specific quality, averaged retained accuracy on all previously-seen tasks, forgetting, extra memory and Raspberry-Pi-4 inference latency. AUC of retained-accuracy-vs-tasks is the primary metric. We compare HIMALAYA to the strongest replay-free PEFT baseline, LILAC. Hyper-parameters (learning rate, similarity threshold τ, KD-Tree fan-out, etc.) are tuned with a small validation stream. All code is PyTorch-2.1 and runs in <24 h on one NVIDIA A100 (80 GB).\n\nData: because no single public corpus covers such a stream, we build a “Continual Task Stream 25” collection that concatenates WMT14-EN→DE, GLUE-RTE, CNN/DM summarisation, TyDiQA-goldp (Swahili & Finnish), Code-Alpaca 20 k, BoolQ-noisy, and 19 more classification, QA, generation and code datasets covering 10 languages. Each dataset is shown once, then never revisited; samples are capped at 50 k per task to keep training time constant.\n\nWorkflow:\n1. Initialise 4-bit QLoRA weights of Llama-2-7B and freeze them.\n2. Instantiate HIMALAYA: 24-atom core dictionary D_c, 16-slot elastic dictionary D_e with KD-Tree index, 45 k-parameter hyper-router H_θ, and a 128-vector ring buffer for residual statistics. All tensors are stored in 3- or 8-bit quantisation.\n3. For each incoming task T_i:\n   a. Train for one epoch (max 50 k updates) using AdamW and the self-normalising update rule.\n   b. Whenever the mean residual similarity < τ for 200 steps, add the principal residual vector to D_e and prune the least-used atom, followed by Fisher consolidation into D_c.\n   c. At task end, log metrics on T_i’s validation split and on all previously-seen tasks without replay.\n4. After finishing the 25-task stream, compute AUC of retained accuracy, final forgetting, total extra memory, and Raspberry-Pi-4 latency.\n\nHardware: training uses one A100 80 GB (fits backbone + adapter gradients easily); inference latency is measured by exporting the adapter to ONNX-runtime-CPU and running on a Raspberry Pi 4 (4 GB RAM).\n\nExpected outcome: HIMALAYA will maintain ≤ 1.5 pp average forgetting (vs ≥ 2.7 pp for LILAC) with only 2.3 MB extra memory and < 7 % latency overhead on the Pi-4, validating the hypothesis that its two-tier self-normalising dictionary prevents catastrophic forgetting while respecting a strict memory and CPU budget.",
+          "evaluation_metrics": [
+            "Area-Under-Curve of retained-accuracy vs tasks",
+            "Average Forgetting Δ",
+            "Task-specific Accuracy",
+            "BLEU",
+            "ROUGE-L",
+            "Exact Match",
+            "F1 Score",
+            "CPU latency overhead",
+            "Area-Under-Curve of ‘retained-accuracy vs tasks’ ↑; secondary – CPU latency overhead ↓"
+          ],
+          "proposed_method": "HIMALAYA (HIerarchical Memory-Allocating LAyer-free Adapter) attaches a tiny layer-agnostic residual correction to every transformer layer without adding new trainable matrices.\nComponents:\n1. Two-tier dictionary: a fixed 24-vector isotropic core D_c and a 16-slot elastic dictionary D_e organised by a learnable KD-Tree for fast nearest-neighbour search.\n2. Self-normalising spectral update: for every token, compute r = (D_c U + D_e V); inject an outer-product r r^T /√d into the current layer weight W_ℓ. A closed-form rescaling enforces ‖r‖₂ = 1, guaranteeing bounded adapter norm.\n3. Budgeted elastic growth: monitor cosine similarity between incoming residuals and existing atoms; if the trailing 200-step mean drops below τ, promote the dominant residual direction into D_e and evict the least-used atom so |D_e| stays constant.\n4. Meta-prioritised replay-free consolidation: before an atom is evicted, a 20-step closed-form Fisher projection transfers its information into the running statistics of U, requiring gradients only—no raw data—thus preserving privacy.\n5. Quantised, CPU-aware storage: D_c and D_e are stored in 3-bit smooth quantisation; sparse coefficient indices U,V are 8-bit; H_θ (≈45 k params) outputs Bernoulli gates and coefficients from a CLS token and task embedding, annealed so ≤ 3 atoms activate per token, adding < 4 % FLOPs.\n6. Total trainable footprint: < 2.5 MB at 8-bit, constant in both number of layers and tasks.\nTraining: only HIMALAYA’s parameters (D_e, KD-Tree splits, H_θ) and sparse routing logits receive gradients. Optimiser: AdamW with linear warm-up.\nInference: the adapter is exported to a small ONNX custom op that reconstructs r on-the-fly using int8 look-ups, making it viable on Raspberry Pi-class CPUs.",
+          "comparative_methods": [
+            "LILAC (Layer-Integrated Low-rank Adapter for Continual learning)"
+          ],
+          "models_to_use": [
+            "Llama-2-7B-HF (4-bit QLoRA, 7 B parameters)"
+          ],
+          "datasets_to_use": [],
+          "hyperparameters_to_search": {
+            "learning_rate": "1e-5-3e-4",
+            "tau_similarity_threshold": "0.75-0.9",
+            "kd_tree_fanout": "4,8,16",
+            "router_temperature_init": "0.5-2.0",
+            "adamw_weight_decay": "0-0.01"
+          }
+        },
+        "experiment_runs": [
+          {
+            "run_id": "proposed-iter1-Llama-2-7B-HF-4-bit-QLoRA-7-B-parameters",
+            "method_name": "proposed",
+            "model_name": "Llama-2-7B-HF (4-bit QLoRA, 7 B parameters)"
+          },
+          {
+            "run_id": "comparative-1-iter1-Llama-2-7B-HF-4-bit-QLoRA-7-B-parameters",
+            "method_name": "comparative-1",
+            "model_name": "Llama-2-7B-HF (4-bit QLoRA, 7 B parameters)"
+          }
+        ]
       }
     ]
   }
