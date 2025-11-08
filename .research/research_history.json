@@ -1,0 +1,10 @@
+{
+  "research_topic": "Improving fine-tuning performance of language models.",
+  "queries": [
+    "parameter-efficient tuning",
+    "adapter-based fine-tuning",
+    "low-rank adaptation",
+    "prompt tuning",
+    "hyperparameter optimization"
+  ]
+}
