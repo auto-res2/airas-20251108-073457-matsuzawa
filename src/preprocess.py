@@ -66,20 +66,31 @@ def build_translation(example, src: str, tgt: str):
 
 
 def build_summarisation(example, doc: str, sum: str):
-    return f"Summarise: {example[doc]}\nSUMMARY:", example[sum]
+    doc_text = example.get(doc, "")
+    sum_text = example.get(sum, "")
+    return f"Summarise: {doc_text}\nSUMMARY:", sum_text
 
 
 def build_classification(example, text: str, label: str):
-    return f"Classify: {example[text]}\nLABEL:", str(int(example[label]))  # keep numeric label as string token
+    text_content = example.get(text, "")
+    label_value = example.get(label, 0)
+    return f"Classify: {text_content}\nLABEL:", str(int(label_value))  # keep numeric label as string token
 
 
 def build_qa(example, question: str, answers: str):
-    tgt = example[answers]["text"][0] if example[answers]["text"] else "unanswerable"
-    return f"Answer the question: {example[question]}\nANSWER:", tgt
+    question_text = example.get(question, "")
+    answers_data = example.get(answers, {})
+    if isinstance(answers_data, dict) and answers_data.get("text"):
+        tgt = answers_data["text"][0]
+    else:
+        tgt = "unanswerable"
+    return f"Answer the question: {question_text}\nANSWER:", tgt
 
 
 def build_code(example, prompt: str, completion: str):
-    return f"### Instruction:\n{example[prompt]}\n### Response:\n", example[completion]
+    prompt_text = example.get(prompt, "")
+    completion_text = example.get(completion, "")
+    return f"### Instruction:\n{prompt_text}\n### Response:\n", completion_text
 
 
 # -----------------------------------------------------------------------------
