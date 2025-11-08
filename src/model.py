@@ -136,7 +136,16 @@ class HIMALAYAAdapter(nn.Module):
         top_val, top_idx = probs.topk(self.expected_k, dim=-1)
         coeff = torch.zeros_like(probs)
         coeff.scatter_(1, top_idx, top_val)
-        update_vec = coeff @ self._dict_mat()  # (B, H)
+
+        # Select only coefficients for active atoms (core + active elastic)
+        num_active_elastic = self.active.sum().item()
+        active_indices = torch.cat([
+            torch.arange(self.k_c, device=coeff.device),  # Core atoms
+            torch.arange(self.k_c, self.k_c + num_active_elastic, device=coeff.device)  # Active elastic atoms
+        ])
+        coeff_active = coeff[:, active_indices]  # (B, k_c + num_active_elastic)
+
+        update_vec = coeff_active @ self._dict_mat()  # (B, H)
 
         # Analytical norm rescaling to 1 ------------------------------------
         update_vec = nn.functional.normalize(update_vec, dim=-1)
